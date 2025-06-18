@@ -22,93 +22,138 @@ export async function GET(request: NextRequest) {
     }
 
     // Receita total
-    const [totalRevenueResult] = await sql.unsafe(`
-      SELECT COALESCE(SUM(total_amount), 0) as total_revenue
-      FROM orders 
-      WHERE status IN ('delivered', 'ready') AND ${dateFilter}
-    `)
+    let totalRevenueResult
+    try {
+      const result = await sql.unsafe(`
+        SELECT COALESCE(SUM(total_amount), 0) as total_revenue
+        FROM orders 
+        WHERE status IN ('delivered', 'ready') AND ${dateFilter}
+      `)
+      totalRevenueResult = Array.isArray(result) && result.length > 0 ? result[0] : { total_revenue: 0 }
+    } catch (error) {
+      console.error("Error fetching total revenue:", error)
+      totalRevenueResult = { total_revenue: 0 }
+    }
 
     // Receita de hoje
-    const [todayRevenueResult] = await sql`
-      SELECT COALESCE(SUM(total_amount), 0) as today_revenue
-      FROM orders 
-      WHERE status IN ('delivered', 'ready') AND DATE(created_at) = CURRENT_DATE
-    `
+    let todayRevenueResult
+    try {
+      const result = await sql`
+        SELECT COALESCE(SUM(total_amount), 0) as today_revenue
+        FROM orders 
+        WHERE status IN ('delivered', 'ready') AND DATE(created_at) = CURRENT_DATE
+      `
+      todayRevenueResult = Array.isArray(result) && result.length > 0 ? result[0] : { today_revenue: 0 }
+    } catch (error) {
+      console.error("Error fetching today revenue:", error)
+      todayRevenueResult = { today_revenue: 0 }
+    }
 
     // Total de pedidos
-    const [totalOrdersResult] = await sql.unsafe(`
-      SELECT COUNT(*) as total_orders
-      FROM orders 
-      WHERE ${dateFilter}
-    `)
+    let totalOrdersResult
+    try {
+      const result = await sql.unsafe(`
+        SELECT COUNT(*) as total_orders
+        FROM orders 
+        WHERE ${dateFilter}
+      `)
+      totalOrdersResult = Array.isArray(result) && result.length > 0 ? result[0] : { total_orders: 0 }
+    } catch (error) {
+      console.error("Error fetching total orders:", error)
+      totalOrdersResult = { total_orders: 0 }
+    }
 
     // Pedidos de hoje
-    const [todayOrdersResult] = await sql`
-      SELECT COUNT(*) as today_orders
-      FROM orders 
-      WHERE DATE(created_at) = CURRENT_DATE
-    `
+    let todayOrdersResult
+    try {
+      const result = await sql`
+        SELECT COUNT(*) as today_orders
+        FROM orders 
+        WHERE DATE(created_at) = CURRENT_DATE
+      `
+      todayOrdersResult = Array.isArray(result) && result.length > 0 ? result[0] : { today_orders: 0 }
+    } catch (error) {
+      console.error("Error fetching today orders:", error)
+      todayOrdersResult = { today_orders: 0 }
+    }
 
     // Ticket médio
-    const [avgOrderResult] = await sql.unsafe(`
-      SELECT COALESCE(AVG(total_amount), 0) as avg_order_value
-      FROM orders 
-      WHERE status IN ('delivered', 'ready') AND ${dateFilter}
-    `)
+    let avgOrderResult
+    try {
+      const result = await sql.unsafe(`
+        SELECT COALESCE(AVG(total_amount), 0) as avg_order_value
+        FROM orders 
+        WHERE status IN ('delivered', 'ready') AND ${dateFilter}
+      `)
+      avgOrderResult = Array.isArray(result) && result.length > 0 ? result[0] : { avg_order_value: 0 }
+    } catch (error) {
+      console.error("Error fetching average order value:", error)
+      avgOrderResult = { avg_order_value: 0 }
+    }
 
     // Itens mais vendidos
-    const topSellingItems = await sql.unsafe(`
-      SELECT 
-        mi.name,
-        SUM(oi.quantity) as quantity,
-        SUM(oi.quantity * oi.unit_price) as revenue
-      FROM order_items oi
-      JOIN menu_items mi ON oi.menu_item_id = mi.id
-      JOIN orders o ON oi.order_id = o.id
-      WHERE o.status IN ('delivered', 'ready') AND ${dateFilter}
-      GROUP BY mi.id, mi.name
-      ORDER BY quantity DESC
-      LIMIT 5
-    `)
+    let topSellingItems = []
+    try {
+      const result = await sql.unsafe(`
+        SELECT 
+          mi.name,
+          SUM(oi.quantity) as quantity,
+          SUM(oi.quantity * oi.unit_price) as revenue
+        FROM order_items oi
+        JOIN menu_items mi ON oi.menu_item_id = mi.id
+        JOIN orders o ON oi.order_id = o.id
+        WHERE o.status IN ('delivered', 'ready') AND ${dateFilter}
+        GROUP BY mi.id, mi.name
+        ORDER BY quantity DESC
+        LIMIT 5
+      `)
+      topSellingItems = Array.isArray(result) ? result : []
+    } catch (error) {
+      console.error("Error fetching top selling items:", error)
+      topSellingItems = []
+    }
 
     // Pedidos recentes
-    const recentOrders = await sql.unsafe(`
-      SELECT 
-        o.id,
-        o.total_amount,
-        o.status,
-        o.created_at,
-        t.table_number
-      FROM orders o
-      JOIN tables t ON o.table_id = t.id
-      WHERE ${dateFilter}
-      ORDER BY o.created_at DESC
-      LIMIT 10
-    `)
+    let recentOrders = []
+    try {
+      const result = await sql.unsafe(`
+        SELECT 
+          o.id,
+          o.total_amount,
+          o.status,
+          o.created_at,
+          t.table_number
+        FROM orders o
+        JOIN tables t ON o.table_id = t.id
+        WHERE ${dateFilter}
+        ORDER BY o.created_at DESC
+        LIMIT 10
+      `)
+      recentOrders = Array.isArray(result) ? result : []
+    } catch (error) {
+      console.error("Error fetching recent orders:", error)
+      recentOrders = []
+    }
 
-    // Ensure all values are properly converted to numbers
+    // Ensure all values are properly converted to numbers with safe fallbacks
     const stats = {
-      totalRevenue: Number.parseFloat(totalRevenueResult?.total_revenue || "0"),
-      todayRevenue: Number.parseFloat(todayRevenueResult?.today_revenue || "0"),
-      totalOrders: Number.parseInt(totalOrdersResult?.total_orders || "0", 10),
-      todayOrders: Number.parseInt(todayOrdersResult?.today_orders || "0", 10),
-      averageOrderValue: Number.parseFloat(avgOrderResult?.avg_order_value || "0"),
-      topSellingItems: Array.isArray(topSellingItems)
-        ? topSellingItems.map((item) => ({
-            name: item.name || "Item desconhecido",
-            quantity: Number.parseInt(item.quantity || "0", 10),
-            revenue: Number.parseFloat(item.revenue || "0"),
-          }))
-        : [],
-      recentOrders: Array.isArray(recentOrders)
-        ? recentOrders.map((order) => ({
-            id: order.id,
-            table_number: order.table_number,
-            total_amount: Number.parseFloat(order.total_amount || "0"),
-            status: order.status || "unknown",
-            created_at: order.created_at,
-          }))
-        : [],
+      totalRevenue: Number.parseFloat(totalRevenueResult?.total_revenue?.toString() || "0"),
+      todayRevenue: Number.parseFloat(todayRevenueResult?.today_revenue?.toString() || "0"),
+      totalOrders: Number.parseInt(totalOrdersResult?.total_orders?.toString() || "0", 10),
+      todayOrders: Number.parseInt(todayOrdersResult?.today_orders?.toString() || "0", 10),
+      averageOrderValue: Number.parseFloat(avgOrderResult?.avg_order_value?.toString() || "0"),
+      topSellingItems: topSellingItems.map((item) => ({
+        name: item?.name?.toString() || "Item desconhecido",
+        quantity: Number.parseInt(item?.quantity?.toString() || "0", 10),
+        revenue: Number.parseFloat(item?.revenue?.toString() || "0"),
+      })),
+      recentOrders: recentOrders.map((order) => ({
+        id: Number.parseInt(order?.id?.toString() || "0", 10),
+        table_number: Number.parseInt(order?.table_number?.toString() || "0", 10),
+        total_amount: Number.parseFloat(order?.total_amount?.toString() || "0"),
+        status: order?.status?.toString() || "unknown",
+        created_at: order?.created_at?.toString() || new Date().toISOString(),
+      })),
     }
 
     return NextResponse.json(stats)

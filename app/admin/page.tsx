@@ -56,10 +56,12 @@ export default function AdminPage() {
     try {
       setLoading(true)
       setError(null)
+
       const response = await fetch(`/api/admin/dashboard?period=${selectedPeriod}`)
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`)
       }
 
       const data = await response.json()
@@ -71,25 +73,27 @@ export default function AdminPage() {
 
       // Create a valid stats object with defaults for missing properties
       const validStats: DashboardStats = {
-        totalRevenue: typeof data.totalRevenue === "number" ? data.totalRevenue : 0,
-        todayRevenue: typeof data.todayRevenue === "number" ? data.todayRevenue : 0,
-        totalOrders: typeof data.totalOrders === "number" ? data.totalOrders : 0,
-        todayOrders: typeof data.todayOrders === "number" ? data.todayOrders : 0,
-        averageOrderValue: typeof data.averageOrderValue === "number" ? data.averageOrderValue : 0,
+        totalRevenue: typeof data.totalRevenue === "number" && !isNaN(data.totalRevenue) ? data.totalRevenue : 0,
+        todayRevenue: typeof data.todayRevenue === "number" && !isNaN(data.todayRevenue) ? data.todayRevenue : 0,
+        totalOrders: typeof data.totalOrders === "number" && !isNaN(data.totalOrders) ? data.totalOrders : 0,
+        todayOrders: typeof data.todayOrders === "number" && !isNaN(data.todayOrders) ? data.todayOrders : 0,
+        averageOrderValue:
+          typeof data.averageOrderValue === "number" && !isNaN(data.averageOrderValue) ? data.averageOrderValue : 0,
         topSellingItems: Array.isArray(data.topSellingItems)
           ? data.topSellingItems.map((item: any) => ({
-              name: item?.name || "Item desconhecido",
-              quantity: typeof item?.quantity === "number" ? item.quantity : 0,
-              revenue: typeof item?.revenue === "number" ? item.revenue : 0,
+              name: item?.name?.toString() || "Item desconhecido",
+              quantity: typeof item?.quantity === "number" && !isNaN(item.quantity) ? item.quantity : 0,
+              revenue: typeof item?.revenue === "number" && !isNaN(item.revenue) ? item.revenue : 0,
             }))
           : [],
         recentOrders: Array.isArray(data.recentOrders)
           ? data.recentOrders.map((order: any) => ({
-              id: order?.id || 0,
-              table_number: order?.table_number || 0,
-              total_amount: typeof order?.total_amount === "number" ? order.total_amount : 0,
-              status: order?.status || "unknown",
-              created_at: order?.created_at || new Date().toISOString(),
+              id: typeof order?.id === "number" ? order.id : 0,
+              table_number: typeof order?.table_number === "number" ? order.table_number : 0,
+              total_amount:
+                typeof order?.total_amount === "number" && !isNaN(order.total_amount) ? order.total_amount : 0,
+              status: order?.status?.toString() || "unknown",
+              created_at: order?.created_at?.toString() || new Date().toISOString(),
             }))
           : [],
       }
@@ -97,7 +101,8 @@ export default function AdminPage() {
       setStats(validStats)
     } catch (error) {
       console.error("Erro ao buscar estatísticas:", error)
-      setError("Erro ao carregar dados do dashboard. Tente novamente.")
+      setError(`Erro ao carregar dados do dashboard: ${error instanceof Error ? error.message : "Erro desconhecido"}`)
+      setStats(defaultStats) // Reset to default stats on error
     } finally {
       setLoading(false)
     }
@@ -133,6 +138,18 @@ export default function AdminPage() {
     }
   }
 
+  const formatCurrency = (value: number) => {
+    return isNaN(value) ? "R$ 0,00" : `R$ ${value.toFixed(2)}`
+  }
+
+  const formatDate = (dateString: string) => {
+    try {
+      return new Date(dateString).toLocaleString()
+    } catch {
+      return "Data inválida"
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-blue-50 p-4 flex items-center justify-center">
@@ -151,7 +168,7 @@ export default function AdminPage() {
           <CardContent className="p-8 text-center">
             <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold mb-2">Erro ao carregar</h2>
-            <p className="text-gray-600 mb-4">{error}</p>
+            <p className="text-gray-600 mb-4 text-sm">{error}</p>
             <Button onClick={fetchDashboardStats} className="bg-blue-600 hover:bg-blue-700">
               Tentar Novamente
             </Button>
@@ -197,8 +214,8 @@ export default function AdminPage() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">R$ {stats.totalRevenue.toFixed(2)}</div>
-              <p className="text-xs text-muted-foreground">Hoje: R$ {stats.todayRevenue.toFixed(2)}</p>
+              <div className="text-2xl font-bold">{formatCurrency(stats.totalRevenue)}</div>
+              <p className="text-xs text-muted-foreground">Hoje: {formatCurrency(stats.todayRevenue)}</p>
             </CardContent>
           </Card>
 
@@ -219,7 +236,7 @@ export default function AdminPage() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">R$ {stats.averageOrderValue.toFixed(2)}</div>
+              <div className="text-2xl font-bold">{formatCurrency(stats.averageOrderValue)}</div>
               <p className="text-xs text-muted-foreground">Por pedido</p>
             </CardContent>
           </Card>
@@ -257,7 +274,7 @@ export default function AdminPage() {
                         <div className="text-sm text-gray-600">{item.quantity} vendidos</div>
                       </div>
                       <div className="text-right">
-                        <div className="font-bold text-blue-600">R$ {item.revenue.toFixed(2)}</div>
+                        <div className="font-bold text-blue-600">{formatCurrency(item.revenue)}</div>
                         <div className="text-sm text-gray-600">receita</div>
                       </div>
                     </div>
@@ -283,10 +300,10 @@ export default function AdminPage() {
                         <div className="font-medium">
                           Pedido #{order.id} - Mesa {order.table_number}
                         </div>
-                        <div className="text-sm text-gray-600">{new Date(order.created_at).toLocaleString()}</div>
+                        <div className="text-sm text-gray-600">{formatDate(order.created_at)}</div>
                       </div>
                       <div className="text-right">
-                        <div className="font-bold">R$ {order.total_amount.toFixed(2)}</div>
+                        <div className="font-bold">{formatCurrency(order.total_amount)}</div>
                         <Badge className={getStatusColor(order.status)} variant="secondary">
                           {getStatusText(order.status)}
                         </Badge>
