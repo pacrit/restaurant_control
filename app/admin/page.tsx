@@ -1,10 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, DollarSign, TrendingUp, Clock, Star, AlertCircle } from "lucide-react"
+import { ArrowLeft, DollarSign, TrendingUp, Clock, Star, AlertCircle, QrCode } from "lucide-react"
 import Link from "next/link"
 
 interface TopSellingItem {
@@ -249,6 +249,27 @@ export default function AdminPage() {
             <CardContent>
               <div className="text-2xl font-bold">25 min</div>
               <p className="text-xs text-muted-foreground">Preparo médio</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Card para QR Codes */}
+        <div className="mb-8">
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardHeader className="text-center">
+              <div className="mx-auto w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mb-4">
+                <QrCode className="w-8 h-8 text-purple-600" />
+              </div>
+              <CardTitle className="text-xl">QR Codes das Mesas</CardTitle>
+              <CardDescription>Gerar e baixar QR Codes para cada mesa</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link href="/admin/qrcodes">
+                <Button className="w-full bg-purple-600 hover:bg-purple-700">
+                  <QrCode className="w-4 h-4 mr-2" />
+                  Gerenciar QR Codes
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         </div>
