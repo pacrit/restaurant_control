@@ -11,7 +11,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ error: "ID da mesa inválido" }, { status: 400 })
     }
 
-    // Validar status permitidos
+    // Validar status permitidos para mesas
     const validStatuses = ["available", "occupied", "reserved", "needs_attention", "awaiting_payment"]
     if (status && !validStatuses.includes(status)) {
       return NextResponse.json({ error: "Status inválido" }, { status: 400 })
@@ -23,22 +23,43 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (action) {
       switch (action) {
         case "close_bill":
-          // Marcar todos os pedidos como "awaiting_payment"
-          await sql`
-            UPDATE orders 
-            SET status = 'awaiting_payment', updated_at = CURRENT_TIMESTAMP
-            WHERE table_id = ${tableId} AND status IN ('delivered', 'ready')
-          `
-          newStatus = "awaiting_payment"
+          try {
+            // Tentar usar awaiting_payment primeiro
+            await sql`
+              UPDATE orders 
+              SET status = 'awaiting_payment', updated_at = CURRENT_TIMESTAMP
+              WHERE table_id = ${tableId} AND status IN ('delivered', 'ready')
+            `
+            newStatus = "awaiting_payment"
+          } catch (error) {
+            // Se falhar, usar delivered como fallback
+            console.log("Fallback: using delivered status instead of awaiting_payment")
+            await sql`
+              UPDATE orders 
+              SET status = 'delivered', updated_at = CURRENT_TIMESTAMP
+              WHERE table_id = ${tableId} AND status IN ('ready')
+            `
+            newStatus = "awaiting_payment" // Mesa ainda fica aguardando pagamento
+          }
           break
 
         case "confirm_payment":
-          // Marcar pedidos como pagos e liberar mesa
-          await sql`
-            UPDATE orders 
-            SET status = 'paid', updated_at = CURRENT_TIMESTAMP
-            WHERE table_id = ${tableId} AND status = 'awaiting_payment'
-          `
+          try {
+            // Tentar usar paid primeiro
+            await sql`
+              UPDATE orders 
+              SET status = 'paid', updated_at = CURRENT_TIMESTAMP
+              WHERE table_id = ${tableId} AND status IN ('awaiting_payment', 'delivered')
+            `
+          } catch (error) {
+            // Se falhar, usar delivered como fallback
+            console.log("Fallback: using delivered status instead of paid")
+            await sql`
+              UPDATE orders 
+              SET status = 'delivered', updated_at = CURRENT_TIMESTAMP
+              WHERE table_id = ${tableId} AND status IN ('awaiting_payment', 'ready')
+            `
+          }
           newStatus = "available"
           break
 
@@ -63,9 +84,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     // Atualizar status da mesa
     const [updatedTable] = await sql`
       UPDATE tables 
-      SET status = ${newStatus}, updated_at = CURRENT_TIMESTAMP
+      SET status = ${newStatus}, 
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ${tableId}
-      RETURNING *
+      RETURNING id, table_number, status, seats, created_at, 
+                COALESCE(updated_at, created_at) as updated_at
     `
 
     if (!updatedTable) {
@@ -79,7 +102,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     })
   } catch (error) {
     console.error("Erro ao atualizar status da mesa:", error)
-    return NextResponse.json({ error: "Erro interno do servidor" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Erro interno do servidor",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }
 

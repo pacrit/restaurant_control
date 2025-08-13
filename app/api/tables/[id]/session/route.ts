@@ -11,7 +11,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     // Verificar se a mesa existe e seu status atual
     const [table] = await sql`
-      SELECT id, table_number, status, seats, updated_at
+      SELECT id, table_number, status, seats, created_at,
+             COALESCE(updated_at, created_at) as updated_at
       FROM tables 
       WHERE id = ${tableId}
     `
@@ -75,7 +76,8 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     // Marcar mesa como disponível (fechar sessão)
     await sql`
       UPDATE tables 
-      SET status = 'available', updated_at = CURRENT_TIMESTAMP
+      SET status = 'available', 
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ${tableId}
     `
 

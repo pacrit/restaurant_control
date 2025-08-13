@@ -61,7 +61,8 @@ export default function WaiterPage() {
 
   const updateTableStatus = async (tableId: number, action: string) => {
     try {
-      const response = await fetch(`/api/tables/${tableId}/status`, {
+      // Try the main API first
+      let response = await fetch(`/api/tables/${tableId}/status`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -69,12 +70,25 @@ export default function WaiterPage() {
         body: JSON.stringify({ action }),
       })
 
+      // If main API fails, try the simple API
+      if (!response.ok) {
+        console.log("Main API failed, trying simple API...")
+        response = await fetch(`/api/tables/${tableId}/status-simple`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ action }),
+        })
+      }
+
       if (response.ok) {
         const result = await response.json()
         alert(result.message)
         fetchTablesWithOrders() // Atualizar lista
       } else {
-        alert("Erro ao atualizar status da mesa")
+        const errorData = await response.json()
+        alert(`Erro: ${errorData.error || "Erro ao atualizar status da mesa"}`)
       }
     } catch (error) {
       console.error("Erro ao atualizar mesa:", error)
