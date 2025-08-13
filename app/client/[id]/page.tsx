@@ -6,7 +6,19 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { ShoppingCart, Plus, Minus, Send, ArrowLeft, User, Clock, CheckCircle, AlertTriangle, Home } from "lucide-react"
+import {
+  ShoppingCart,
+  Plus,
+  Minus,
+  Send,
+  ArrowLeft,
+  User,
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+  Home,
+  Info,
+} from "lucide-react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useTableSession } from "@/hooks/use-table-session"
@@ -38,13 +50,17 @@ export default function MesaClientPage() {
 
   useEffect(() => {
     if (tableId && !sessionLoading) {
-      if (sessionError || !isValid) {
+      if (sessionError && !session) {
         setStep("session-expired")
-      } else {
+      } else if (session) {
+        // Mostrar informação sobre ocupação automática
+        if (session.session.wasOccupied) {
+          console.log("Mesa ocupada automaticamente para seu uso")
+        }
         initializeTable()
       }
     }
-  }, [tableId, sessionLoading, sessionError, isValid])
+  }, [tableId, sessionLoading, sessionError, session])
 
   // Detectar atividade do usuário
   useEffect(() => {
@@ -62,18 +78,18 @@ export default function MesaClientPage() {
     }
   }, [])
 
-  // Verificar inatividade (30 minutos)
+  // Verificar inatividade (60 minutos para testes)
   useEffect(() => {
     const checkInactivity = () => {
       const inactiveTime = Date.now() - lastActivity
-      const maxInactiveTime = 30 * 60 * 1000 // 30 minutos
+      const maxInactiveTime = 60 * 60 * 1000 // 60 minutos para testes
 
       if (inactiveTime > maxInactiveTime && step !== "session-expired") {
         setStep("session-expired")
       }
     }
 
-    const interval = setInterval(checkInactivity, 60000) // Verificar a cada minuto
+    const interval = setInterval(checkInactivity, 5 * 60 * 1000) // Verificar a cada 5 minutos
     return () => clearInterval(interval)
   }, [lastActivity, step])
 
@@ -136,9 +152,9 @@ export default function MesaClientPage() {
   }
 
   const addToCart = (item: MenuItem) => {
-    // Verificar se a sessão ainda é válida antes de adicionar ao carrinho
-    if (!isValid) {
-      setStep("session-expired")
+    // Verificar se a mesa está aguardando pagamento
+    if (session?.table.status === "awaiting_payment") {
+      alert("Esta mesa está aguardando pagamento. Não é possível fazer novos pedidos.")
       return
     }
 
@@ -291,15 +307,19 @@ export default function MesaClientPage() {
               <p>Sua sessão nesta mesa expirou por um dos seguintes motivos:</p>
               <ul className="text-sm text-left bg-gray-50 p-4 rounded-lg space-y-1">
                 <li>• A mesa foi liberada pelo restaurante</li>
-                <li>• Muito tempo de inatividade (30+ minutos)</li>
+                <li>• Muito tempo de inatividade (60+ minutos)</li>
                 <li>• A conta já foi fechada</li>
-                <li>• Você não está mais no restaurante</li>
+                <li>• Mesa aguardando pagamento</li>
               </ul>
+              {sessionError && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">Erro: {sessionError}</div>}
             </div>
             <div className="space-y-2">
               <p className="text-sm text-gray-500 mb-4">
                 Se você ainda está no restaurante, escaneie o QR Code da mesa novamente ou peça ajuda ao garçom.
               </p>
+              <Button onClick={() => window.location.reload()} className="w-full mb-2" variant="outline">
+                Tentar Novamente
+              </Button>
               <Link href="/">
                 <Button className="w-full bg-orange-600 hover:bg-orange-700">
                   <Home className="w-4 h-4 mr-2" />
@@ -319,131 +339,8 @@ export default function MesaClientPage() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mx-auto mb-4"></div>
           <p>Carregando mesa...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (sessionError && !session) {
-    return (
-      <div className="min-h-screen bg-orange-50 p-4 flex items-center justify-center">
-        <Card className="max-w-md w-full">
-          <CardContent className="p-8 text-center">
-            <h2 className="text-xl font-semibold mb-2">Erro</h2>
-            <p className="text-gray-600 mb-4">{sessionError}</p>
-            <Link href="/client">
-              <Button className="bg-orange-600 hover:bg-orange-700">Voltar</Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  if (step === "dashboard") {
-    const activeOrders = tableOrders.filter((order) => order.status !== "delivered")
-    const completedOrders = tableOrders.filter((order) => order.status === "delivered")
-
-    return (
-      <div className="min-h-screen bg-orange-50 p-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Mesa {session?.table?.table_number}</h1>
-              <p className="text-gray-600">{session?.table?.seats} lugares</p>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={() => setStep("menu")} className="bg-orange-600 hover:bg-orange-700">
-                <ShoppingCart className="w-4 h-4 mr-2" />
-                Fazer Pedido
-              </Button>
-              <Button onClick={() => callWaiter("Solicitar conta")} variant="outline">
-                <User className="w-4 h-4 mr-2" />
-                Chamar Garçom
-              </Button>
-            </div>
-          </div>
-
-          {/* Pedidos Ativos */}
-          {activeOrders.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-xl font-semibold mb-4">Pedidos Ativos</h2>
-              <div className="space-y-4">
-                {activeOrders.map((order) => (
-                  <Card key={order.id}>
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <CardTitle className="text-lg">Pedido #{order.id}</CardTitle>
-                        <div className="flex items-center gap-2">
-                          <Badge className={getStatusColor(order.status)}>{getStatusText(order.status)}</Badge>
-                          <div className="flex items-center text-sm text-gray-500">
-                            <Clock className="w-4 h-4 mr-1" />
-                            {new Date(order.created_at).toLocaleTimeString()}
-                          </div>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2 mb-4">
-                        {order.items.map((item) => (
-                          <div key={item.id} className="flex justify-between">
-                            <span>
-                              {item.quantity}x {item.menu_item.name}
-                            </span>
-                            <span>R$ {(item.quantity * item.unit_price).toFixed(2)}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex justify-between items-center font-bold text-lg">
-                        <span>Total:</span>
-                        <span className="text-orange-600">R$ {order.total_amount.toFixed(2)}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Histórico de Pedidos */}
-          {completedOrders.length > 0 && (
-            <div>
-              <h2 className="text-xl font-semibold mb-4">Histórico de Pedidos</h2>
-              <div className="space-y-4">
-                {completedOrders.slice(0, 3).map((order) => (
-                  <Card key={order.id} className="opacity-75">
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <CardTitle className="text-lg">Pedido #{order.id}</CardTitle>
-                        <div className="flex items-center gap-2">
-                          <Badge className={getStatusColor(order.status)}>{getStatusText(order.status)}</Badge>
-                          <CheckCircle className="w-4 h-4 text-green-600" />
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex justify-between items-center">
-                        <span>{order.items.length} itens</span>
-                        <span className="font-bold">R$ {order.total_amount.toFixed(2)}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {tableOrders.length === 0 && (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <ShoppingCart className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h2 className="text-xl font-semibold mb-2">Nenhum pedido ainda</h2>
-                <p className="text-gray-600 mb-4">Faça seu primeiro pedido para começar!</p>
-                <Button onClick={() => setStep("menu")} className="bg-orange-600 hover:bg-orange-700">
-                  Ver Cardápio
-                </Button>
-              </CardContent>
-            </Card>
+          {session?.session.wasOccupied && (
+            <p className="text-sm text-green-600 mt-2">Mesa ocupada automaticamente para você!</p>
           )}
         </div>
       </div>
@@ -460,7 +357,17 @@ export default function MesaClientPage() {
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Voltar
               </Button>
-              <h1 className="text-3xl font-bold text-gray-900">Cardápio - Mesa {session?.table?.table_number}</h1>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Cardápio - Mesa {session?.table?.table_number}</h1>
+                {session?.table.status === "awaiting_payment" && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <Info className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm text-purple-600">
+                      Mesa aguardando pagamento - novos pedidos bloqueados
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex gap-2">
               <Button
@@ -474,7 +381,7 @@ export default function MesaClientPage() {
               <Button
                 onClick={() => setStep("cart")}
                 className="bg-orange-600 hover:bg-orange-700"
-                disabled={cart.length === 0}
+                disabled={cart.length === 0 || session?.table.status === "awaiting_payment"}
               >
                 <ShoppingCart className="w-4 h-4 mr-2" />
                 Carrinho ({cart.length})
@@ -510,7 +417,11 @@ export default function MesaClientPage() {
                 <CardContent>
                   <div className="flex justify-between items-center">
                     <span className="text-2xl font-bold text-orange-600">R$ {item.price.toFixed(2)}</span>
-                    <Button onClick={() => addToCart(item)} className="bg-orange-600 hover:bg-orange-700">
+                    <Button
+                      onClick={() => addToCart(item)}
+                      className="bg-orange-600 hover:bg-orange-700"
+                      disabled={session?.table.status === "awaiting_payment"}
+                    >
                       <Plus className="w-4 h-4 mr-2" />
                       Adicionar
                     </Button>
@@ -780,6 +691,116 @@ export default function MesaClientPage() {
               Chamar Garçom
             </Button>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (step === "dashboard") {
+    const activeOrders = tableOrders.filter((order) => order.status !== "delivered")
+    const completedOrders = tableOrders.filter((order) => order.status === "delivered")
+
+    return (
+      <div className="min-h-screen bg-orange-50 p-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Mesa {session?.table?.table_number}</h1>
+              <p className="text-gray-600">{session?.table?.seats} lugares</p>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={() => setStep("menu")} className="bg-orange-600 hover:bg-orange-700">
+                <ShoppingCart className="w-4 h-4 mr-2" />
+                Fazer Pedido
+              </Button>
+              <Button onClick={() => callWaiter("Solicitar conta")} variant="outline">
+                <User className="w-4 h-4 mr-2" />
+                Chamar Garçom
+              </Button>
+            </div>
+          </div>
+
+          {/* Pedidos Ativos */}
+          {activeOrders.length > 0 && (
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold mb-4">Pedidos Ativos</h2>
+              <div className="space-y-4">
+                {activeOrders.map((order) => (
+                  <Card key={order.id}>
+                    <CardHeader>
+                      <div className="flex justify-between items-start">
+                        <CardTitle className="text-lg">Pedido #{order.id}</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <Badge className={getStatusColor(order.status)}>{getStatusText(order.status)}</Badge>
+                          <div className="flex items-center text-sm text-gray-500">
+                            <Clock className="w-4 h-4 mr-1" />
+                            {new Date(order.created_at).toLocaleTimeString()}
+                          </div>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2 mb-4">
+                        {order.items.map((item) => (
+                          <div key={item.id} className="flex justify-between">
+                            <span>
+                              {item.quantity}x {item.menu_item.name}
+                            </span>
+                            <span>R$ {(item.quantity * item.unit_price).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-between items-center font-bold text-lg border-t pt-2">
+                        <span>Total:</span>
+                        <span className="text-orange-600">R$ {order.total_amount.toFixed(2)}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Histórico de Pedidos */}
+          {completedOrders.length > 0 && (
+            <div>
+              <h2 className="text-xl font-semibold mb-4">Histórico de Pedidos</h2>
+              <div className="space-y-4">
+                {completedOrders.slice(0, 3).map((order) => (
+                  <Card key={order.id} className="opacity-75">
+                    <CardHeader>
+                      <div className="flex justify-between items-start">
+                        <CardTitle className="text-lg">Pedido #{order.id}</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <Badge className={getStatusColor(order.status)}>{getStatusText(order.status)}</Badge>
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex justify-between items-center">
+                        <span>{order.items.length} itens</span>
+                        <span className="font-bold">R$ {order.total_amount.toFixed(2)}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {tableOrders.length === 0 && (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <ShoppingCart className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h2 className="text-xl font-semibold mb-2">Nenhum pedido ainda</h2>
+                <p className="text-gray-600 mb-4">Faça seu primeiro pedido para começar!</p>
+                <Button onClick={() => setStep("menu")} className="bg-orange-600 hover:bg-orange-700">
+                  Ver Cardápio
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     )

@@ -14,6 +14,7 @@ interface TableSession {
     hasActiveOrders: boolean
     hasRecentOrders: boolean
     lastOrderTime?: string
+    wasOccupied?: boolean
   }
 }
 
@@ -41,8 +42,18 @@ export function useTableSession(tableId: number) {
       const data = await response.json()
       setSession(data)
 
+      // Mostrar mensagem se a mesa foi ocupada automaticamente
+      if (data.session.wasOccupied) {
+        console.log(`Mesa ${data.table.table_number} foi ocupada automaticamente`)
+      }
+
       if (!data.session.isValid) {
-        setError("Sessão expirada ou mesa não está mais ativa")
+        // Só mostrar erro se realmente for uma sessão inválida
+        if (data.table.status === "awaiting_payment") {
+          setError("Mesa aguardando pagamento - não é possível fazer novos pedidos")
+        } else {
+          setError("Sessão expirada ou mesa não está mais ativa")
+        }
         return false
       }
 
@@ -77,8 +88,8 @@ export function useTableSession(tableId: number) {
     if (tableId) {
       validateSession()
 
-      // Validar sessão a cada 2 minutos
-      const interval = setInterval(validateSession, 2 * 60 * 1000)
+      // Validar sessão a cada 5 minutos (menos frequente para testes)
+      const interval = setInterval(validateSession, 5 * 60 * 1000)
 
       return () => clearInterval(interval)
     }

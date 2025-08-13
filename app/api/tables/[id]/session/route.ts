@@ -41,9 +41,37 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const hasActiveOrders = Number.parseInt(activeOrders[0]?.active_count || "0") > 0
     const hasRecentOrders = Number.parseInt(recentOrders[0]?.recent_count || "0") > 0
 
-    // Determinar se a sessão é válida
-    const isSessionValid =
-      table.status === "occupied" || hasActiveOrders || (hasRecentOrders && table.status !== "available")
+    // Lógica de validação de sessão mais flexível
+    let isSessionValid = false
+    let shouldOccupyTable = false
+
+    if (table.status === "awaiting_payment") {
+      // Mesa aguardando pagamento - sessão inválida (não pode fazer novos pedidos)
+      isSessionValid = false
+    } else if (table.status === "occupied" || hasActiveOrders) {
+      // Mesa ocupada ou com pedidos ativos - sessão válida
+      isSessionValid = true
+    } else if (table.status === "available" && !hasRecentOrders) {
+      // Mesa disponível sem pedidos recentes - permitir acesso e ocupar
+      isSessionValid = true
+      shouldOccupyTable = true
+    } else if (hasRecentOrders && table.status !== "available") {
+      // Tem pedidos recentes mas mesa não está disponível - sessão válida
+      isSessionValid = true
+    } else {
+      // Outros casos - permitir acesso por enquanto (para testes)
+      isSessionValid = true
+    }
+
+    // Se deve ocupar a mesa, fazer isso agora
+    if (shouldOccupyTable) {
+      await sql`
+        UPDATE tables 
+        SET status = 'occupied', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${tableId}
+      `
+      table.status = "occupied" // Atualizar objeto local
+    }
 
     return NextResponse.json({
       table: {
@@ -57,6 +85,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         hasActiveOrders,
         hasRecentOrders,
         lastOrderTime: activeOrders[0]?.last_order || recentOrders[0]?.last_order,
+        wasOccupied: shouldOccupyTable,
       },
     })
   } catch (error) {
