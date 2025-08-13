@@ -14,14 +14,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       RETURNING *
     `
 
-    // Se o pedido foi entregue, liberar a mesa
-    if (status === "delivered") {
-      await sql`
-        UPDATE tables 
-        SET status = 'available' 
-        WHERE id = ${updatedOrder.table_id}
-      `
-    }
+    // Não liberar mesa automaticamente - isso será feito pelo garçom
+    // quando confirmar o pagamento
 
     return NextResponse.json(updatedOrder)
   } catch (error) {

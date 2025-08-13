@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { ShoppingCart, Plus, Minus, Send, ArrowLeft, User, Clock, CheckCircle } from "lucide-react"
+import { ShoppingCart, Plus, Minus, Send, ArrowLeft, User, Clock, CheckCircle, AlertTriangle, Home } from "lucide-react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
-import type { MenuItem, MenuCategory, Table, OrderWithItems } from "@/lib/database"
+import { useParams, useRouter } from "next/navigation"
+import { useTableSession } from "@/hooks/use-table-session"
+import type { MenuItem, MenuCategory, OrderWithItems } from "@/lib/database"
 
 interface CartItem extends MenuItem {
   quantity: number
@@ -18,10 +19,14 @@ interface CartItem extends MenuItem {
 
 export default function MesaClientPage() {
   const params = useParams()
+  const router = useRouter()
   const tableId = Number.parseInt(params.id as string)
 
-  const [step, setStep] = useState<"loading" | "menu" | "cart" | "confirmation" | "dashboard" | "orders">("loading")
-  const [table, setTable] = useState<Table | null>(null)
+  const { session, loading: sessionLoading, error: sessionError, isValid, validateSession } = useTableSession(tableId)
+
+  const [step, setStep] = useState<
+    "loading" | "menu" | "cart" | "confirmation" | "dashboard" | "orders" | "session-expired"
+  >("loading")
   const [categories, setCategories] = useState<MenuCategory[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
@@ -29,30 +34,52 @@ export default function MesaClientPage() {
   const [orderNotes, setOrderNotes] = useState("")
   const [loading, setLoading] = useState(false)
   const [tableOrders, setTableOrders] = useState<OrderWithItems[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const [lastActivity, setLastActivity] = useState(Date.now())
 
   useEffect(() => {
-    if (tableId) {
-      initializeTable()
+    if (tableId && !sessionLoading) {
+      if (sessionError || !isValid) {
+        setStep("session-expired")
+      } else {
+        initializeTable()
+      }
     }
-  }, [tableId])
+  }, [tableId, sessionLoading, sessionError, isValid])
+
+  // Detectar atividade do usuário
+  useEffect(() => {
+    const updateActivity = () => setLastActivity(Date.now())
+
+    const events = ["mousedown", "mousemove", "keypress", "scroll", "touchstart", "click"]
+    events.forEach((event) => {
+      document.addEventListener(event, updateActivity, true)
+    })
+
+    return () => {
+      events.forEach((event) => {
+        document.removeEventListener(event, updateActivity, true)
+      })
+    }
+  }, [])
+
+  // Verificar inatividade (30 minutos)
+  useEffect(() => {
+    const checkInactivity = () => {
+      const inactiveTime = Date.now() - lastActivity
+      const maxInactiveTime = 30 * 60 * 1000 // 30 minutos
+
+      if (inactiveTime > maxInactiveTime && step !== "session-expired") {
+        setStep("session-expired")
+      }
+    }
+
+    const interval = setInterval(checkInactivity, 60000) // Verificar a cada minuto
+    return () => clearInterval(interval)
+  }, [lastActivity, step])
 
   const initializeTable = async () => {
     try {
       setLoading(true)
-      setError(null)
-
-      // Verificar se a mesa existe e está disponível
-      const tableResponse = await fetch("/api/tables")
-      const tables = await tableResponse.json()
-      const currentTable = tables.find((t: Table) => t.id === tableId)
-
-      if (!currentTable) {
-        setError("Mesa não encontrada")
-        return
-      }
-
-      setTable(currentTable)
 
       // Buscar pedidos existentes da mesa
       await fetchTableOrders()
@@ -63,7 +90,7 @@ export default function MesaClientPage() {
       setStep("menu")
     } catch (error) {
       console.error("Erro ao inicializar mesa:", error)
-      setError("Erro ao carregar dados da mesa")
+      setStep("session-expired")
     } finally {
       setLoading(false)
     }
@@ -109,6 +136,12 @@ export default function MesaClientPage() {
   }
 
   const addToCart = (item: MenuItem) => {
+    // Verificar se a sessão ainda é válida antes de adicionar ao carrinho
+    if (!isValid) {
+      setStep("session-expired")
+      return
+    }
+
     const itemWithNumericPrice = {
       ...item,
       price: typeof item.price === "string" ? Number.parseFloat(item.price) : item.price,
@@ -143,7 +176,14 @@ export default function MesaClientPage() {
   }
 
   const submitOrder = async () => {
-    if (!table || cart.length === 0) return
+    if (!session?.table || cart.length === 0) return
+
+    // Revalidar sessão antes de enviar pedido
+    const sessionValid = await validateSession()
+    if (!sessionValid) {
+      setStep("session-expired")
+      return
+    }
 
     setLoading(true)
     try {
@@ -153,7 +193,7 @@ export default function MesaClientPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          table_id: table.id,
+          table_id: session.table.id,
           items: cart.map((item) => ({
             menu_item_id: item.id,
             quantity: item.quantity,
@@ -237,7 +277,43 @@ export default function MesaClientPage() {
     ? menuItems.filter((item) => item.category_id === selectedCategory && item.available)
     : menuItems.filter((item) => item.available)
 
-  if (step === "loading" || loading) {
+  // Tela de sessão expirada
+  if (step === "session-expired") {
+    return (
+      <div className="min-h-screen bg-orange-50 p-4 flex items-center justify-center">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-8 h-8 text-red-600" />
+            </div>
+            <h2 className="text-2xl font-bold mb-4 text-red-800">Sessão Expirada</h2>
+            <div className="text-gray-600 mb-6 space-y-2">
+              <p>Sua sessão nesta mesa expirou por um dos seguintes motivos:</p>
+              <ul className="text-sm text-left bg-gray-50 p-4 rounded-lg space-y-1">
+                <li>• A mesa foi liberada pelo restaurante</li>
+                <li>• Muito tempo de inatividade (30+ minutos)</li>
+                <li>• A conta já foi fechada</li>
+                <li>• Você não está mais no restaurante</li>
+              </ul>
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm text-gray-500 mb-4">
+                Se você ainda está no restaurante, escaneie o QR Code da mesa novamente ou peça ajuda ao garçom.
+              </p>
+              <Link href="/">
+                <Button className="w-full bg-orange-600 hover:bg-orange-700">
+                  <Home className="w-4 h-4 mr-2" />
+                  Voltar ao Início
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (step === "loading" || sessionLoading || loading) {
     return (
       <div className="min-h-screen bg-orange-50 p-4 flex items-center justify-center">
         <div className="text-center">
@@ -248,13 +324,13 @@ export default function MesaClientPage() {
     )
   }
 
-  if (error) {
+  if (sessionError && !session) {
     return (
       <div className="min-h-screen bg-orange-50 p-4 flex items-center justify-center">
         <Card className="max-w-md w-full">
           <CardContent className="p-8 text-center">
             <h2 className="text-xl font-semibold mb-2">Erro</h2>
-            <p className="text-gray-600 mb-4">{error}</p>
+            <p className="text-gray-600 mb-4">{sessionError}</p>
             <Link href="/client">
               <Button className="bg-orange-600 hover:bg-orange-700">Voltar</Button>
             </Link>
@@ -273,8 +349,8 @@ export default function MesaClientPage() {
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Mesa {table?.table_number}</h1>
-              <p className="text-gray-600">{table?.seats} lugares</p>
+              <h1 className="text-3xl font-bold text-gray-900">Mesa {session?.table?.table_number}</h1>
+              <p className="text-gray-600">{session?.table?.seats} lugares</p>
             </div>
             <div className="flex gap-2">
               <Button onClick={() => setStep("menu")} className="bg-orange-600 hover:bg-orange-700">
@@ -384,7 +460,7 @@ export default function MesaClientPage() {
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Voltar
               </Button>
-              <h1 className="text-3xl font-bold text-gray-900">Cardápio - Mesa {table?.table_number}</h1>
+              <h1 className="text-3xl font-bold text-gray-900">Cardápio - Mesa {session?.table?.table_number}</h1>
             </div>
             <div className="flex gap-2">
               <Button
@@ -457,7 +533,7 @@ export default function MesaClientPage() {
               <ArrowLeft className="w-4 h-4 mr-2" />
               Voltar ao Cardápio
             </Button>
-            <h1 className="text-3xl font-bold text-gray-900">Seu Pedido - Mesa {table?.table_number}</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Seu Pedido - Mesa {session?.table?.table_number}</h1>
           </div>
 
           {cart.length === 0 ? (
@@ -587,7 +663,9 @@ export default function MesaClientPage() {
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Voltar ao Cardápio
               </Button>
-              <h1 className="text-3xl font-bold text-gray-900">Acompanhar Pedidos - Mesa {table?.table_number}</h1>
+              <h1 className="text-3xl font-bold text-gray-900">
+                Acompanhar Pedidos - Mesa {session?.table?.table_number}
+              </h1>
             </div>
             <Button onClick={() => callWaiter("Solicitar conta")} className="bg-blue-600 hover:bg-blue-700">
               <User className="w-4 h-4 mr-2" />

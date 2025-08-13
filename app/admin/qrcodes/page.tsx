@@ -29,7 +29,7 @@ export default function QRCodesPage() {
 
   const generateQRCodeURL = (tableId: number) => {
     const baseURL = typeof window !== "undefined" ? window.location.origin : ""
-    return `${baseURL}/client/mesa/${tableId}`
+    return `${baseURL}/client/${tableId}`
   }
 
   const generateQRCodeImage = (tableId: number) => {
@@ -96,6 +96,7 @@ export default function QRCodesPage() {
                 <li>• Os clientes escaneiam o QR Code e fazem pedidos diretamente</li>
                 <li>• Baixe os QR Codes e imprima para colocar nas mesas</li>
                 <li>• Use o botão "Visualizar" para testar o QR Code</li>
+                <li>• URLs simplificadas: /client/1, /client/2, etc.</li>
               </ul>
             </CardContent>
           </Card>
@@ -119,7 +120,9 @@ export default function QRCodesPage() {
                   />
                 </div>
 
-                <div className="text-xs text-gray-500 mb-4 break-all">{generateQRCodeURL(table.id)}</div>
+                <div className="text-xs text-gray-500 mb-4 break-all font-mono bg-gray-50 p-2 rounded">
+                  {generateQRCodeURL(table.id)}
+                </div>
 
                 <div className="flex gap-2">
                   <Button
@@ -150,6 +153,19 @@ export default function QRCodesPage() {
                 <li>4. Coloque em local visível na mesa</li>
                 <li>5. Teste escaneando com um celular</li>
               </ol>
+
+              <div className="mt-4 p-4 bg-green-50 rounded-lg">
+                <h4 className="font-semibold text-green-800 mb-2">URLs das Mesas:</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                  {tables.slice(0, 8).map((table) => (
+                    <div key={table.id} className="bg-white p-2 rounded border">
+                      <strong>Mesa {table.table_number}:</strong>
+                      <br />
+                      <code className="text-green-700">/client/{table.id}</code>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>

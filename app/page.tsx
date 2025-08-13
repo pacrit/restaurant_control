@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { UtensilsCrossed, ChefHat, BarChart3 } from "lucide-react"
+import { UtensilsCrossed, ChefHat, BarChart3, User } from "lucide-react"
 
 export default function HomePage() {
   return (
@@ -41,6 +41,22 @@ export default function HomePage() {
             <CardContent>
               <Link href="/kitchen">
                 <Button className="w-full bg-red-600 hover:bg-red-700">Acessar Cozinha</Button>
+              </Link>
+            </CardContent>
+          </Card>
+
+          {/* Interface do Garçom */}
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardHeader className="text-center">
+              <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                <User className="w-8 h-8 text-green-600" />
+              </div>
+              <CardTitle className="text-2xl">Garçom</CardTitle>
+              <CardDescription>Gerenciar mesas e atendimento</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link href="/waiter">
+                <Button className="w-full bg-green-600 hover:bg-green-700">Acessar Painel</Button>
               </Link>
             </CardContent>
           </Card>

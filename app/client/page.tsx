@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { ShoppingCart, Plus, Minus, Send, ArrowLeft } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import type { MenuItem, MenuCategory, Table } from "@/lib/database"
 
 interface CartItem extends MenuItem {
@@ -24,7 +25,8 @@ export default function ClientPage() {
   const [cart, setCart] = useState<CartItem[]>([])
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null)
   const [orderNotes, setOrderNotes] = useState("")
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
 
   useEffect(() => {
     fetchTables()
@@ -39,6 +41,8 @@ export default function ClientPage() {
       setTables(data)
     } catch (error) {
       console.error("Erro ao buscar mesas:", error)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -146,6 +150,22 @@ export default function ClientPage() {
     ? menuItems.filter((item) => item.category_id === selectedCategory && item.available)
     : menuItems.filter((item) => item.available)
 
+  const selectTable = (tableId: number) => {
+    // Redirecionar diretamente para a página da mesa
+    router.push(`/client/${tableId}`)
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-orange-50 p-4 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mx-auto mb-4"></div>
+          <p>Carregando mesas...</p>
+        </div>
+      </div>
+    )
+  }
+
   if (step === "table") {
     return (
       <div className="min-h-screen bg-orange-50 p-4">
@@ -168,12 +188,12 @@ export default function ClientPage() {
                   selectedTable === table.table_number
                     ? "ring-2 ring-orange-500 bg-orange-100"
                     : table.status === "available"
-                      ? "hover:bg-gray-50"
+                      ? "hover:bg-gray-50 hover:scale-105"
                       : "opacity-50 cursor-not-allowed"
                 }`}
                 onClick={() => {
                   if (table.status === "available") {
-                    setSelectedTable(table.table_number)
+                    selectTable(table.id)
                   }
                 }}
               >
@@ -191,13 +211,15 @@ export default function ClientPage() {
             ))}
           </div>
 
-          {selectedTable && (
-            <div className="mt-8 text-center">
-              <Button onClick={() => setStep("menu")} className="bg-orange-600 hover:bg-orange-700" size="lg">
-                Continuar para o Cardápio
-              </Button>
+          <div className="mt-8 text-center">
+            <div className="bg-white p-6 rounded-lg shadow-sm">
+              <h2 className="text-lg font-semibold mb-2">Como usar:</h2>
+              <p className="text-gray-600">
+                Clique na mesa desejada para acessar o cardápio e fazer seus pedidos. Cada mesa tem acesso apenas aos
+                seus próprios pedidos.
+              </p>
             </div>
-          )}
+          </div>
         </div>
       </div>
     )
