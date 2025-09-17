@@ -18,6 +18,7 @@ import {
   BarChart3,
   PieChart,
   Activity,
+  UtensilsCrossed,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -402,7 +403,7 @@ export default function AdminPage() {
         </div>
 
         {/* Ações Rápidas */}
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
+        <div className="grid md:grid-cols-4 gap-6 mb-8">
           <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardHeader className="text-center">
               <div className="mx-auto w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mb-4">
@@ -416,6 +417,24 @@ export default function AdminPage() {
                 <Button className="w-full bg-purple-600 hover:bg-purple-700">
                   <QrCode className="w-4 h-4 mr-2" />
                   Gerenciar QR Codes
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+            <CardHeader className="text-center">
+              <div className="mx-auto w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-4">
+                <UtensilsCrossed className="w-8 h-8 text-orange-600" />
+              </div>
+              <CardTitle className="text-xl">Cardápio</CardTitle>
+              <CardDescription>Editar categorias e itens do menu</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link href="/admin/menu">
+                <Button className="w-full bg-orange-600 hover:bg-orange-700">
+                  <UtensilsCrossed className="w-4 h-4 mr-2" />
+                  Editor de Cardápio
                 </Button>
               </Link>
             </CardContent>

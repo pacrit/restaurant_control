@@ -19,6 +19,7 @@ import {
   Home,
   Shield,
   QrCode,
+  CreditCard,
 } from "lucide-react"
 import Link from "next/link"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
@@ -708,6 +709,12 @@ export default function MesaClientPage() {
               <User className="w-4 h-4 mr-2" />
               Chamar Garçom
             </Button>
+            <Link href={`/client/${tableId}/payment`}>
+              <Button className="bg-green-600 hover:bg-green-700">
+                <CreditCard className="w-4 h-4 mr-2" />
+                Fechar Conta
+              </Button>
+            </Link>
           </div>
         </div>
       </div>
