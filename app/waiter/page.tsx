@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Users, DollarSign, CheckCircle, AlertCircle, Clock, CreditCard } from "lucide-react"
+import { ArrowLeft, Users, DollarSign, CheckCircle, Clock, CreditCard } from "lucide-react"
 import Link from "next/link"
 import type { Table, OrderWithItems } from "@/lib/database"
 
@@ -29,7 +29,7 @@ export default function WaiterPage() {
     try {
       const [tablesResponse, ordersResponse] = await Promise.all([
         fetch("/api/tables"),
-        fetch("/api/orders?status=delivered,ready,awaiting_payment"),
+        fetch("/api/orders?status=delivered,ready,preparing,pending"),
       ])
 
       const tablesData = await tablesResponse.json()
@@ -61,26 +61,13 @@ export default function WaiterPage() {
 
   const updateTableStatus = async (tableId: number, action: string) => {
     try {
-      // Try the main API first
-      let response = await fetch(`/api/tables/${tableId}/status`, {
+      const response = await fetch(`/api/tables/${tableId}/status-simple`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ action }),
       })
-
-      // If main API fails, try the simple API
-      if (!response.ok) {
-        console.log("Main API failed, trying simple API...")
-        response = await fetch(`/api/tables/${tableId}/status-simple`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ action }),
-        })
-      }
 
       if (response.ok) {
         const result = await response.json()
@@ -106,8 +93,6 @@ export default function WaiterPage() {
         return "bg-yellow-100 text-yellow-800"
       case "needs_attention":
         return "bg-red-100 text-red-800"
-      case "awaiting_payment":
-        return "bg-purple-100 text-purple-800"
       default:
         return "bg-gray-100 text-gray-800"
     }
@@ -122,8 +107,6 @@ export default function WaiterPage() {
       case "reserved":
         return "Reservada"
       case "needs_attention":
-        return "Precisa Atenção"
-      case "awaiting_payment":
         return "Aguardando Pagamento"
       default:
         return status
@@ -139,8 +122,6 @@ export default function WaiterPage() {
       case "reserved":
         return <Clock className="w-4 h-4" />
       case "needs_attention":
-        return <AlertCircle className="w-4 h-4" />
-      case "awaiting_payment":
         return <CreditCard className="w-4 h-4" />
       default:
         return <Users className="w-4 h-4" />
@@ -204,7 +185,7 @@ export default function WaiterPage() {
                     {table.activeOrders.length > 0 && (
                       <div className="bg-gray-50 p-3 rounded-lg">
                         <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-medium">Pedidos Ativos:</span>
+                          <span className="text-sm font-medium">Pedidos:</span>
                           <span className="text-sm">{table.activeOrders.length}</span>
                         </div>
                         <div className="flex justify-between items-center">
@@ -213,7 +194,7 @@ export default function WaiterPage() {
                         </div>
                         {table.lastOrderTime && (
                           <div className="text-xs text-gray-500 mt-1">
-                            Último pedido: {new Date(table.lastOrderTime).toLocaleTimeString()}
+                            Último: {new Date(table.lastOrderTime).toLocaleTimeString()}
                           </div>
                         )}
                       </div>
@@ -221,7 +202,7 @@ export default function WaiterPage() {
 
                     {/* Ações por Status */}
                     <div className="flex flex-col gap-2">
-                      {table.status === "occupied" && table.activeOrders.length > 0 && (
+                      {table.status === "occupied" && (
                         <Button
                           onClick={() => updateTableStatus(table.id, "close_bill")}
                           className="bg-purple-600 hover:bg-purple-700"
@@ -232,7 +213,7 @@ export default function WaiterPage() {
                         </Button>
                       )}
 
-                      {table.status === "awaiting_payment" && (
+                      {table.status === "needs_attention" && (
                         <Button
                           onClick={() => updateTableStatus(table.id, "confirm_payment")}
                           className="bg-green-600 hover:bg-green-700"
@@ -240,18 +221,6 @@ export default function WaiterPage() {
                         >
                           <CheckCircle className="w-4 h-4 mr-2" />
                           Confirmar Pagamento
-                        </Button>
-                      )}
-
-                      {table.status === "needs_attention" && (
-                        <Button
-                          onClick={() => updateTableStatus(table.id, "occupy")}
-                          variant="outline"
-                          size="sm"
-                          className="border-blue-600 text-blue-600"
-                        >
-                          <Users className="w-4 h-4 mr-2" />
-                          Atendido
                         </Button>
                       )}
 
@@ -273,7 +242,7 @@ export default function WaiterPage() {
                     {/* Link para ver detalhes */}
                     <Link href={`/client/${table.id}`} target="_blank">
                       <Button variant="ghost" size="sm" className="w-full">
-                        Ver Pedidos da Mesa
+                        Ver Mesa
                       </Button>
                     </Link>
                   </CardContent>
@@ -308,7 +277,7 @@ export default function WaiterPage() {
         <div className="mt-8">
           <Card>
             <CardContent className="p-6">
-              <h3 className="font-semibold mb-2">Fluxo de Atendimento:</h3>
+              <h3 className="font-semibold mb-2">Fluxo Simplificado:</h3>
               <div className="grid md:grid-cols-2 gap-4 text-sm">
                 <div>
                   <h4 className="font-medium text-blue-600 mb-2">1. Mesa Ocupada:</h4>
@@ -316,11 +285,11 @@ export default function WaiterPage() {
                     <li>• Cliente faz pedidos pelo QR Code</li>
                     <li>• Pedidos aparecem na cozinha</li>
                     <li>• Você entrega os pratos</li>
-                    <li>• Clique "Fechar Conta" quando solicitado</li>
+                    <li>• Clique "Fechar Conta"</li>
                   </ul>
                 </div>
                 <div>
-                  <h4 className="font-medium text-purple-600 mb-2">2. Aguardando Pagamento:</h4>
+                  <h4 className="font-medium text-red-600 mb-2">2. Aguardando Pagamento:</h4>
                   <ul className="space-y-1 text-gray-600">
                     <li>• Conta foi fechada</li>
                     <li>• Cliente não pode mais fazer pedidos</li>

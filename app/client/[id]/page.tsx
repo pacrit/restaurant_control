@@ -17,10 +17,11 @@ import {
   CheckCircle,
   AlertTriangle,
   Home,
-  Info,
+  Shield,
+  QrCode,
 } from "lucide-react"
 import Link from "next/link"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useTableSession } from "@/hooks/use-table-session"
 import type { MenuItem, MenuCategory, OrderWithItems } from "@/lib/database"
 
@@ -32,12 +33,20 @@ interface CartItem extends MenuItem {
 export default function MesaClientPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const tableId = Number.parseInt(params.id as string)
+  const token = searchParams.get("token")
 
-  const { session, loading: sessionLoading, error: sessionError, isValid, validateSession } = useTableSession(tableId)
+  const {
+    session,
+    loading: sessionLoading,
+    error: sessionError,
+    isValid,
+    validateSession,
+  } = useTableSession(tableId, token)
 
   const [step, setStep] = useState<
-    "loading" | "menu" | "cart" | "confirmation" | "dashboard" | "orders" | "session-expired"
+    "loading" | "menu" | "cart" | "confirmation" | "dashboard" | "orders" | "access-denied"
   >("loading")
   const [categories, setCategories] = useState<MenuCategory[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
@@ -51,7 +60,7 @@ export default function MesaClientPage() {
   useEffect(() => {
     if (tableId && !sessionLoading) {
       if (sessionError && !session) {
-        setStep("session-expired")
+        setStep("access-denied")
       } else if (session) {
         // Mostrar informação sobre ocupação automática
         if (session.session.wasOccupied) {
@@ -78,18 +87,18 @@ export default function MesaClientPage() {
     }
   }, [])
 
-  // Verificar inatividade (60 minutos para testes)
+  // Verificar inatividade (4 horas - mesmo tempo do token)
   useEffect(() => {
     const checkInactivity = () => {
       const inactiveTime = Date.now() - lastActivity
-      const maxInactiveTime = 60 * 60 * 1000 // 60 minutos para testes
+      const maxInactiveTime = 4 * 60 * 60 * 1000 // 4 horas
 
-      if (inactiveTime > maxInactiveTime && step !== "session-expired") {
-        setStep("session-expired")
+      if (inactiveTime > maxInactiveTime && step !== "access-denied") {
+        setStep("access-denied")
       }
     }
 
-    const interval = setInterval(checkInactivity, 5 * 60 * 1000) // Verificar a cada 5 minutos
+    const interval = setInterval(checkInactivity, 10 * 60 * 1000) // Verificar a cada 10 minutos
     return () => clearInterval(interval)
   }, [lastActivity, step])
 
@@ -106,7 +115,7 @@ export default function MesaClientPage() {
       setStep("menu")
     } catch (error) {
       console.error("Erro ao inicializar mesa:", error)
-      setStep("session-expired")
+      setStep("access-denied")
     } finally {
       setLoading(false)
     }
@@ -153,7 +162,7 @@ export default function MesaClientPage() {
 
   const addToCart = (item: MenuItem) => {
     // Verificar se a mesa está aguardando pagamento
-    if (session?.table.status === "awaiting_payment") {
+    if (session?.table.status === "needs_attention") {
       alert("Esta mesa está aguardando pagamento. Não é possível fazer novos pedidos.")
       return
     }
@@ -197,7 +206,7 @@ export default function MesaClientPage() {
     // Revalidar sessão antes de enviar pedido
     const sessionValid = await validateSession()
     if (!sessionValid) {
-      setStep("session-expired")
+      setStep("access-denied")
       return
     }
 
@@ -293,33 +302,37 @@ export default function MesaClientPage() {
     ? menuItems.filter((item) => item.category_id === selectedCategory && item.available)
     : menuItems.filter((item) => item.available)
 
-  // Tela de sessão expirada
-  if (step === "session-expired") {
+  // Tela de acesso negado
+  if (step === "access-denied") {
     return (
       <div className="min-h-screen bg-orange-50 p-4 flex items-center justify-center">
         <Card className="max-w-md w-full">
           <CardContent className="p-8 text-center">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="w-8 h-8 text-red-600" />
+              <Shield className="w-8 h-8 text-red-600" />
             </div>
-            <h2 className="text-2xl font-bold mb-4 text-red-800">Sessão Expirada</h2>
+            <h2 className="text-2xl font-bold mb-4 text-red-800">Acesso Negado</h2>
             <div className="text-gray-600 mb-6 space-y-2">
-              <p>Sua sessão nesta mesa expirou por um dos seguintes motivos:</p>
+              <p>Não é possível acessar esta mesa pelos seguintes motivos:</p>
               <ul className="text-sm text-left bg-gray-50 p-4 rounded-lg space-y-1">
-                <li>• A mesa foi liberada pelo restaurante</li>
-                <li>• Muito tempo de inatividade (60+ minutos)</li>
-                <li>• A conta já foi fechada</li>
-                <li>• Mesa aguardando pagamento</li>
+                <li>• Token de acesso obrigatório</li>
+                <li>• Token expirado ou inválido</li>
+                <li>• Acesso direto pela URL não permitido</li>
+                <li>• Mesa foi liberada pelo restaurante</li>
+                <li>• Sessão de segurança expirada</li>
               </ul>
               {sessionError && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">Erro: {sessionError}</div>}
             </div>
-            <div className="space-y-2">
-              <p className="text-sm text-gray-500 mb-4">
-                Se você ainda está no restaurante, escaneie o QR Code da mesa novamente ou peça ajuda ao garçom.
-              </p>
-              <Button onClick={() => window.location.reload()} className="w-full mb-2" variant="outline">
-                Tentar Novamente
-              </Button>
+            <div className="space-y-3">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <QrCode className="w-5 h-5 text-blue-600" />
+                  <span className="font-medium text-blue-800">Como acessar corretamente:</span>
+                </div>
+                <p className="text-sm text-blue-700">
+                  Escaneie o QR Code da mesa no restaurante ou peça ao garçom para gerar um novo link de acesso.
+                </p>
+              </div>
               <Link href="/">
                 <Button className="w-full bg-orange-600 hover:bg-orange-700">
                   <Home className="w-4 h-4 mr-2" />
@@ -338,10 +351,11 @@ export default function MesaClientPage() {
       <div className="min-h-screen bg-orange-50 p-4 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mx-auto mb-4"></div>
-          <p>Carregando mesa...</p>
-          {session?.session.wasOccupied && (
-            <p className="text-sm text-green-600 mt-2">Mesa ocupada automaticamente para você!</p>
-          )}
+          <p>Validando acesso seguro...</p>
+          <div className="flex items-center justify-center gap-2 mt-2 text-sm text-green-600">
+            <Shield className="w-4 h-4" />
+            <span>Conexão protegida</span>
+          </div>
         </div>
       </div>
     )
@@ -359,9 +373,13 @@ export default function MesaClientPage() {
               </Button>
               <div>
                 <h1 className="text-3xl font-bold text-gray-900">Cardápio - Mesa {session?.table?.table_number}</h1>
-                {session?.table.status === "awaiting_payment" && (
+                <div className="flex items-center gap-2 mt-1">
+                  <Shield className="w-4 h-4 text-green-600" />
+                  <span className="text-sm text-green-600">Acesso seguro verificado</span>
+                </div>
+                {session?.table.status === "needs_attention" && (
                   <div className="flex items-center gap-2 mt-2">
-                    <Info className="w-4 h-4 text-purple-600" />
+                    <AlertTriangle className="w-4 h-4 text-purple-600" />
                     <span className="text-sm text-purple-600">
                       Mesa aguardando pagamento - novos pedidos bloqueados
                     </span>
@@ -381,7 +399,7 @@ export default function MesaClientPage() {
               <Button
                 onClick={() => setStep("cart")}
                 className="bg-orange-600 hover:bg-orange-700"
-                disabled={cart.length === 0 || session?.table.status === "awaiting_payment"}
+                disabled={cart.length === 0 || session?.table.status === "needs_attention"}
               >
                 <ShoppingCart className="w-4 h-4 mr-2" />
                 Carrinho ({cart.length})
@@ -420,7 +438,7 @@ export default function MesaClientPage() {
                     <Button
                       onClick={() => addToCart(item)}
                       className="bg-orange-600 hover:bg-orange-700"
-                      disabled={session?.table.status === "awaiting_payment"}
+                      disabled={session?.table.status === "needs_attention"}
                     >
                       <Plus className="w-4 h-4 mr-2" />
                       Adicionar

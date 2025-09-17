@@ -14,11 +14,12 @@ interface TableSession {
     hasActiveOrders: boolean
     hasRecentOrders: boolean
     lastOrderTime?: string
-    wasOccupied?: boolean
+    tokenValid?: boolean
+    tokenExpires?: string
   }
 }
 
-export function useTableSession(tableId: number) {
+export function useTableSession(tableId: number, token?: string | null) {
   const [session, setSession] = useState<TableSession | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -28,10 +29,18 @@ export function useTableSession(tableId: number) {
       setLoading(true)
       setError(null)
 
-      const response = await fetch(`/api/tables/${tableId}/session`)
+      const url = new URL(`/api/tables/${tableId}/session`, window.location.origin)
+      if (token) {
+        url.searchParams.set("token", token)
+      }
+
+      const response = await fetch(url.toString())
 
       if (!response.ok) {
-        if (response.status === 404) {
+        if (response.status === 403) {
+          const errorData = await response.json()
+          setError(errorData.reason || "Acesso negado")
+        } else if (response.status === 404) {
           setError("Mesa não encontrada")
         } else {
           setError("Erro ao validar sessão")
@@ -42,14 +51,8 @@ export function useTableSession(tableId: number) {
       const data = await response.json()
       setSession(data)
 
-      // Mostrar mensagem se a mesa foi ocupada automaticamente
-      if (data.session.wasOccupied) {
-        console.log(`Mesa ${data.table.table_number} foi ocupada automaticamente`)
-      }
-
       if (!data.session.isValid) {
-        // Só mostrar erro se realmente for uma sessão inválida
-        if (data.table.status === "awaiting_payment") {
+        if (data.table.status === "needs_attention") {
           setError("Mesa aguardando pagamento - não é possível fazer novos pedidos")
         } else {
           setError("Sessão expirada ou mesa não está mais ativa")
@@ -65,7 +68,7 @@ export function useTableSession(tableId: number) {
     } finally {
       setLoading(false)
     }
-  }, [tableId])
+  }, [tableId, token])
 
   const closeSession = useCallback(async () => {
     try {
@@ -88,8 +91,8 @@ export function useTableSession(tableId: number) {
     if (tableId) {
       validateSession()
 
-      // Validar sessão a cada 5 minutos (menos frequente para testes)
-      const interval = setInterval(validateSession, 5 * 60 * 1000)
+      // Validar sessão a cada 10 minutos
+      const interval = setInterval(validateSession, 10 * 60 * 1000)
 
       return () => clearInterval(interval)
     }

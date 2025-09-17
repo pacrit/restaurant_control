@@ -4,15 +4,18 @@ import { type NextRequest, NextResponse } from "next/server"
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const tableId = Number.parseInt(params.id)
+    const { searchParams } = new URL(request.url)
+    const token = searchParams.get("token")
 
     if (isNaN(tableId)) {
       return NextResponse.json({ error: "ID da mesa inválido" }, { status: 400 })
     }
 
-    // Verificar se a mesa existe e seu status atual
+    // Verificar se a mesa existe e validar token
     const [table] = await sql`
       SELECT id, table_number, status, seats, created_at,
-             COALESCE(updated_at, created_at) as updated_at
+             COALESCE(updated_at, created_at) as updated_at,
+             access_token, token_expires_at, last_access
       FROM tables 
       WHERE id = ${tableId}
     `
@@ -21,7 +24,31 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: "Mesa não encontrada" }, { status: 404 })
     }
 
-    // Verificar se há pedidos ativos (não entregues) nos últimos 3 horas
+    // Validação de segurança do token
+    const now = new Date()
+    const tokenExpired = table.token_expires_at ? new Date(table.token_expires_at) < now : true
+    const validToken = token && table.access_token === token && !tokenExpired
+
+    // Se não tem token válido, negar acesso
+    if (!validToken) {
+      return NextResponse.json(
+        {
+          error: "Acesso negado",
+          reason: !token ? "Token de acesso obrigatório" : tokenExpired ? "Token expirado" : "Token inválido",
+          requiresNewToken: true,
+        },
+        { status: 403 },
+      )
+    }
+
+    // Atualizar último acesso
+    await sql`
+      UPDATE tables 
+      SET last_access = CURRENT_TIMESTAMP
+      WHERE id = ${tableId}
+    `
+
+    // Verificar pedidos ativos
     const activeOrders = await sql`
       SELECT COUNT(*) as active_count, MAX(created_at) as last_order
       FROM orders 
@@ -30,7 +57,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         AND created_at > NOW() - INTERVAL '3 hours'
     `
 
-    // Verificar se há pedidos recentes (últimas 2 horas) mesmo que entregues
     const recentOrders = await sql`
       SELECT COUNT(*) as recent_count, MAX(created_at) as last_order
       FROM orders 
@@ -41,36 +67,18 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const hasActiveOrders = Number.parseInt(activeOrders[0]?.active_count || "0") > 0
     const hasRecentOrders = Number.parseInt(recentOrders[0]?.recent_count || "0") > 0
 
-    // Lógica de validação de sessão mais flexível
+    // Validação de sessão
     let isSessionValid = false
-    let shouldOccupyTable = false
 
-    if (table.status === "awaiting_payment") {
-      // Mesa aguardando pagamento - sessão inválida (não pode fazer novos pedidos)
+    if (table.status === "needs_attention") {
+      // Mesa aguardando pagamento - sessão inválida para novos pedidos
       isSessionValid = false
-    } else if (table.status === "occupied" || hasActiveOrders) {
-      // Mesa ocupada ou com pedidos ativos - sessão válida
-      isSessionValid = true
-    } else if (table.status === "available" && !hasRecentOrders) {
-      // Mesa disponível sem pedidos recentes - permitir acesso e ocupar
-      isSessionValid = true
-      shouldOccupyTable = true
-    } else if (hasRecentOrders && table.status !== "available") {
-      // Tem pedidos recentes mas mesa não está disponível - sessão válida
+    } else if (table.status === "occupied" || hasActiveOrders || hasRecentOrders) {
+      // Mesa ativa - sessão válida
       isSessionValid = true
     } else {
-      // Outros casos - permitir acesso por enquanto (para testes)
+      // Outros casos - permitir acesso
       isSessionValid = true
-    }
-
-    // Se deve ocupar a mesa, fazer isso agora
-    if (shouldOccupyTable) {
-      await sql`
-        UPDATE tables 
-        SET status = 'occupied', updated_at = CURRENT_TIMESTAMP
-        WHERE id = ${tableId}
-      `
-      table.status = "occupied" // Atualizar objeto local
     }
 
     return NextResponse.json({
@@ -85,7 +93,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         hasActiveOrders,
         hasRecentOrders,
         lastOrderTime: activeOrders[0]?.last_order || recentOrders[0]?.last_order,
-        wasOccupied: shouldOccupyTable,
+        tokenValid: true,
+        tokenExpires: table.token_expires_at,
       },
     })
   } catch (error) {
@@ -102,10 +111,12 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       return NextResponse.json({ error: "ID da mesa inválido" }, { status: 400 })
     }
 
-    // Marcar mesa como disponível (fechar sessão)
+    // Marcar mesa como disponível e limpar token
     await sql`
       UPDATE tables 
       SET status = 'available', 
+          access_token = NULL,
+          token_expires_at = NULL,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ${tableId}
     `

@@ -5,80 +5,63 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   try {
     const tableId = Number.parseInt(params.id)
     const body = await request.json()
-    const { status, action } = body
+    const { action } = body
 
     if (isNaN(tableId)) {
       return NextResponse.json({ error: "ID da mesa inválido" }, { status: 400 })
     }
 
-    // Validar status permitidos para mesas
-    const validStatuses = ["available", "occupied", "reserved", "needs_attention", "awaiting_payment"]
-    if (status && !validStatuses.includes(status)) {
-      return NextResponse.json({ error: "Status inválido" }, { status: 400 })
+    let newStatus = "occupied"
+    let message = ""
+
+    // Ações específicas com status válidos
+    switch (action) {
+      case "close_bill":
+        // Marcar pedidos como entregues e mesa como ocupada (aguardando pagamento)
+        await sql`
+          UPDATE orders 
+          SET status = 'delivered', updated_at = CURRENT_TIMESTAMP
+          WHERE table_id = ${tableId} AND status IN ('ready', 'preparing', 'pending')
+        `
+        newStatus = "needs_attention" // Usar needs_attention em vez de awaiting_payment
+        message = `Conta da Mesa fechada. Aguardando pagamento.`
+        break
+
+      case "confirm_payment":
+        // Marcar todos os pedidos como entregues e liberar mesa
+        await sql`
+          UPDATE orders 
+          SET status = 'delivered', updated_at = CURRENT_TIMESTAMP
+          WHERE table_id = ${tableId} AND status IN ('ready', 'preparing', 'pending')
+        `
+        newStatus = "available"
+        message = `Pagamento confirmado. Mesa liberada.`
+        break
+
+      case "occupy":
+        newStatus = "occupied"
+        message = `Mesa marcada como ocupada.`
+        break
+
+      case "free":
+        newStatus = "available"
+        message = `Mesa liberada.`
+        break
+
+      case "need_attention":
+        newStatus = "needs_attention"
+        message = `Mesa precisa de atenção.`
+        break
+
+      default:
+        return NextResponse.json({ error: "Ação inválida" }, { status: 400 })
     }
 
-    let newStatus = status
-
-    // Ações específicas
-    if (action) {
-      switch (action) {
-        case "close_bill":
-          try {
-            // Tentar usar awaiting_payment primeiro
-            await sql`
-              UPDATE orders 
-              SET status = 'awaiting_payment', updated_at = CURRENT_TIMESTAMP
-              WHERE table_id = ${tableId} AND status IN ('delivered', 'ready')
-            `
-            newStatus = "awaiting_payment"
-          } catch (error) {
-            // Se falhar, usar delivered como fallback
-            console.log("Fallback: using delivered status instead of awaiting_payment")
-            await sql`
-              UPDATE orders 
-              SET status = 'delivered', updated_at = CURRENT_TIMESTAMP
-              WHERE table_id = ${tableId} AND status IN ('ready')
-            `
-            newStatus = "awaiting_payment" // Mesa ainda fica aguardando pagamento
-          }
-          break
-
-        case "confirm_payment":
-          try {
-            // Tentar usar paid primeiro
-            await sql`
-              UPDATE orders 
-              SET status = 'paid', updated_at = CURRENT_TIMESTAMP
-              WHERE table_id = ${tableId} AND status IN ('awaiting_payment', 'delivered')
-            `
-          } catch (error) {
-            // Se falhar, usar delivered como fallback
-            console.log("Fallback: using delivered status instead of paid")
-            await sql`
-              UPDATE orders 
-              SET status = 'delivered', updated_at = CURRENT_TIMESTAMP
-              WHERE table_id = ${tableId} AND status IN ('awaiting_payment', 'ready')
-            `
-          }
-          newStatus = "available"
-          break
-
-        case "occupy":
-          newStatus = "occupied"
-          break
-
-        case "free":
-          // Liberar mesa completamente
-          newStatus = "available"
-          break
-
-        case "need_attention":
-          newStatus = "needs_attention"
-          break
-
-        default:
-          return NextResponse.json({ error: "Ação inválida" }, { status: 400 })
-      }
+    // Verificar se o status é válido antes de atualizar
+    const validStatuses = ["available", "occupied", "reserved", "needs_attention"]
+    if (!validStatuses.includes(newStatus)) {
+      console.error(`Status inválido: ${newStatus}`)
+      newStatus = "occupied" // Fallback para status seguro
     }
 
     // Atualizar status da mesa
@@ -98,7 +81,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json({
       success: true,
       table: updatedTable,
-      message: getActionMessage(action, updatedTable.table_number),
+      message: message || `Status da Mesa ${updatedTable.table_number} atualizado.`,
     })
   } catch (error) {
     console.error("Erro ao atualizar status da mesa:", error)
@@ -109,22 +92,5 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       },
       { status: 500 },
     )
-  }
-}
-
-function getActionMessage(action: string, tableNumber: number): string {
-  switch (action) {
-    case "close_bill":
-      return `Conta da Mesa ${tableNumber} fechada. Aguardando pagamento.`
-    case "confirm_payment":
-      return `Pagamento da Mesa ${tableNumber} confirmado. Mesa liberada.`
-    case "occupy":
-      return `Mesa ${tableNumber} marcada como ocupada.`
-    case "free":
-      return `Mesa ${tableNumber} liberada.`
-    case "need_attention":
-      return `Mesa ${tableNumber} precisa de atenção.`
-    default:
-      return `Status da Mesa ${tableNumber} atualizado.`
   }
 }
