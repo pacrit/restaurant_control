@@ -5,7 +5,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   try {
     const tableId = Number.parseInt(params.id)
     const body = await request.json()
-    const { action } = body
+    const { action, status } = body
 
     if (isNaN(tableId)) {
       return NextResponse.json({ error: "ID da mesa inválido" }, { status: 400 })
@@ -13,6 +13,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
     let newStatus = "occupied"
     let message = ""
+
+    const validStatuses = ["available", "occupied", "reserved", "needs_attention"]
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json({ error: "Status inválido" }, { status: 400 })
+    }
 
     switch (action) {
       case "close_bill":
@@ -95,7 +100,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         break
 
       default:
-        return NextResponse.json({ error: "Ação inválida" }, { status: 400 })
+        // Atualizar status da mesa diretamente se uma ação válida não for fornecida
+        await sql`
+          UPDATE tables 
+          SET status = ${status}, updated_at = NOW() 
+          WHERE id = ${tableId}
+        `
+        return NextResponse.json({ success: true, status })
     }
 
     // Atualizar status da mesa
